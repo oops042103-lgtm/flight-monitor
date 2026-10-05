@@ -20,6 +20,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 執行監控
-        run: python flight_monitor.py
+      - name: 安裝 requests
+        run: pip install requests
 
+      - name: 執行監控
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: python flight_monitor.py
