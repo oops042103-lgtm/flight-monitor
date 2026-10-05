@@ -41,6 +41,28 @@ response.raise_for_status()
 data = response.json()
 
 itineraries = data.get("itineraries", [])
+print("\n===== 行程資料檢查 =====")
+
+for i, itinerary in enumerate(itineraries[:3], 1):
+    print(f"\n--- 行程 {i} ---")
+
+    print("價格：")
+    print(itinerary.get("price"))
+
+    print("行李：")
+    print(itinerary.get("baggage"))
+
+    print("去程：")
+    print(itinerary.get("outbound"))
+
+    print("回程：")
+    print(itinerary.get("inbound"))
+
+    print("連結：")
+    print(itinerary.get("url"))
+
+print("\n===== 檢查結束 =====")
+
 
 print("找到航班數量:", len(itineraries))
 
