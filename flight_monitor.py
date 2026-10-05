@@ -1,15 +1,37 @@
 import os
+import re
 import requests
 from bs4 import BeautifulSoup
 
 WEBHOOK = os.environ["DISCORD_WEBHOOK"]
 
-URL = (
+# =========================
+# 你的機票條件
+# =========================
+
+DEPARTURE = "TPE"
+ARRIVAL = "PUS"
+
+OUTBOUND_DATE = "2027-02-19"
+RETURN_DATE = "2027-02-21"
+
+BUDGET = 11000
+
+# 去程 15:00～19:00
+START_HOUR = 15
+END_HOUR = 19
+
+# =========================
+# Google Flights
+# =========================
+
+url = (
     "https://www.google.com/travel/flights"
-    "?hl=zh-TW"
+    f"?q=Flights%20from%20{DEPARTURE}%20to%20{ARRIVAL}"
+    f"%20on%20{OUTBOUND_DATE}"
+    f"%20returning%20{RETURN_DATE}"
+    "&hl=zh-TW"
     "&curr=TWD"
-    "&f=0"
-    "&tfs="
 )
 
 headers = {
@@ -18,50 +40,135 @@ headers = {
         "AppleWebKit/537.36 "
         "(KHTML, like Gecko) "
         "Chrome/131.0 Safari/537.36"
-    )
+    ),
+    "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8"
 }
 
 response = requests.get(
-    URL,
+    url,
     headers=headers,
-    timeout=30
+    timeout=60
 )
 
-print("HTTP:", response.status_code)
-print("網頁大小:", len(response.text))
+response.raise_for_status()
 
-if response.status_code != 200:
-    raise Exception(
-        f"Google Flights 無法取得，HTTP {response.status_code}"
-    )
+print("Google Flights HTTP:", response.status_code)
 
 soup = BeautifulSoup(
     response.text,
     "html.parser"
 )
 
-text = soup.get_text(" ", strip=True)
+text = soup.get_text(
+    " ",
+    strip=True
+)
 
-print(text[:3000])
+print("資料長度:", len(text))
 
-message = """
-🧪 Google Flights 免費查價測試
+# =========================
+# 找價格
+# =========================
 
-GitHub 已成功連線 Google Flights。
+prices = []
 
-接下來會測試：
-✈️ TPE → PUS
-📅 2027/02/19 → 2027/02/21
+matches = re.findall(
+    r"NT\$?\s?([\d,]+)",
+    text
+)
+
+for match in matches:
+
+    price = int(
+        match.replace(",", "")
+    )
+
+    # 避免抓到不合理的數字
+    if 1000 <= price <= 100000:
+        prices.append(price)
+
+prices = sorted(set(prices))
+
+print("找到的價格:")
+print(prices[:20])
+
+
+# =========================
+# Discord
+# =========================
+
+if not prices:
+
+    message = f"""
+⚠️ **機票查價結果**
+
+目前沒有成功解析到 Google Flights 的票價。
+
+✈️ {DEPARTURE} → {ARRIVAL}
+
+📅 {OUTBOUND_DATE}
+📅 回程 {RETURN_DATE}
+
 🕒 去程 15:00–19:00
-💰 預算 NT$11,000
 
-請查看 GitHub Actions 執行結果。
+💰 預算 NT${BUDGET:,}
+
+這不代表沒有機票，
+只是目前免費抓取沒有成功解析價格。
 """
+
+else:
+
+    cheapest = min(prices)
+
+    if cheapest < BUDGET:
+
+        message = f"""
+🔥 **機票低於預算！**
+
+✈️ {DEPARTURE} → {ARRIVAL}
+
+📅 {OUTBOUND_DATE}
+📅 回程 {RETURN_DATE}
+
+🕒 去程 15:00–19:00
+
+💰 **目前抓到最低：NT${cheapest:,}**
+
+🎯 預算：NT${BUDGET:,}
+
+🔥 低於預算 NT${BUDGET - cheapest:,}！
+"""
+
+    else:
+
+        message = f"""
+✈️ **機票價格監控**
+
+航線：
+{DEPARTURE} → {ARRIVAL}
+
+📅 {OUTBOUND_DATE}
+📅 回程 {RETURN_DATE}
+
+🕒 去程 15:00–19:00
+
+💰 目前最低：
+**NT${cheapest:,}**
+
+🎯 預算：
+NT${BUDGET:,}
+
+目前尚未低於預算。
+"""
+
 
 requests.post(
     WEBHOOK,
-    json={"content": message},
+    json={
+        "content": message
+    },
     timeout=30
 ).raise_for_status()
 
-print("Discord 測試通知成功")
+print("Discord 通知成功")
