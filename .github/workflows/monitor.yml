@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: "5 * * * *"
+    - cron: "5 */4 * * *"
       timezone: "Asia/Taipei"
 
 jobs:
@@ -21,10 +21,10 @@ jobs:
           python-version: "3.12"
 
       - name: 安裝 requests
-        run: pip install requests beautifulsoup4
+        run: pip install requests
 
-- name: 執行監控
-  env:
-    DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-    IGNAV_API_KEY: ${{ secrets.IGNAV_API_KEY }}
-  run: python flight_monitor.py
+      - name: 執行監控
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          IGNAV_API_KEY: ${{ secrets.IGNAV_API_KEY }}
+        run: python flight_monitor.py
