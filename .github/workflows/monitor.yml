@@ -21,7 +21,7 @@ jobs:
           python-version: "3.12"
 
       - name: 安裝 requests
-        run: pip install requests
+        run: pip install requests beautifulsoup4
 
       - name: 執行監控
         env:
