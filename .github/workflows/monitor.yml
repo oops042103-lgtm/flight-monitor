@@ -1,1 +1,25 @@
+name: Flight Monitor
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: "5 * * * *"
+      timezone: "Asia/Taipei"
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 下載程式
+        uses: actions/checkout@v4
+
+      - name: 設定 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 執行監控
+        run: python flight_monitor.py
 
