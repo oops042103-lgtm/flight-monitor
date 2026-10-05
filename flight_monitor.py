@@ -58,6 +58,10 @@ soup = BeautifulSoup(
     response.text,
     "html.parser"
 )
+with open("google_flights.html", "w", encoding="utf-8") as f:
+    f.write(response.text)
+
+print("Google Flights HTML 已保存")
 
 text = soup.get_text(
     " ",
