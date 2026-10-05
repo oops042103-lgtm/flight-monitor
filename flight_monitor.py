@@ -1,174 +1,157 @@
 import os
-import re
 import requests
-from bs4 import BeautifulSoup
 
-WEBHOOK = os.environ["DISCORD_WEBHOOK"]
+API_KEY = os.environ["IGNAV_API_KEY"]
+DISCORD_WEBHOOK = os.environ["DISCORD_WEBHOOK"]
 
-# =========================
-# 你的機票條件
-# =========================
+url = "https://ignav.com/api/fares/round-trip"
 
-DEPARTURE = "TPE"
-ARRIVAL = "PUS"
-
-OUTBOUND_DATE = "2027-02-19"
-RETURN_DATE = "2027-02-21"
-
-BUDGET = 11000
-
-# 去程 15:00～19:00
-START_HOUR = 15
-END_HOUR = 19
-
-# =========================
-# Google Flights
-# =========================
-
-url = (
-    "https://www.google.com/travel/flights"
-    f"?q=Flights%20from%20{DEPARTURE}%20to%20{ARRIVAL}"
-    f"%20on%20{OUTBOUND_DATE}"
-    f"%20returning%20{RETURN_DATE}"
-    "&hl=zh-TW"
-    "&curr=TWD"
-)
-
-headers = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 "
-        "(KHTML, like Gecko) "
-        "Chrome/131.0 Safari/537.36"
-    ),
-    "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8"
+payload = {
+    "origin": "TPE",
+    "destination": "PUS",
+    "departure_date": "2027-02-19",
+    "return_date": "2027-02-21",
+    "adults": 1,
+    "cabin_class": "economy",
+    "market": "TW",
+    "departure_time_range": {
+        "earliest_hour": 15,
+        "latest_hour": 19
+    }
 }
 
-response = requests.get(
+headers = {
+    "X-Api-Key": API_KEY,
+    "Content-Type": "application/json"
+}
+
+print("開始查詢機票...")
+
+response = requests.post(
     url,
     headers=headers,
-    timeout=60
+    json=payload,
+    timeout=90
 )
+
+print("HTTP:", response.status_code)
 
 response.raise_for_status()
 
-print("Google Flights HTTP:", response.status_code)
+data = response.json()
 
-soup = BeautifulSoup(
-    response.text,
-    "html.parser"
-)
-with open("google_flights.html", "w", encoding="utf-8") as f:
-    f.write(response.text)
+itineraries = data.get("itineraries", [])
 
-print("Google Flights HTML 已保存")
+print("找到航班數量:", len(itineraries))
 
-text = soup.get_text(
-    " ",
-    strip=True
-)
+if not itineraries:
+    message = """
+⚠️ **Ignav 查價結果**
 
-print("資料長度:", len(text))
+目前沒有找到符合條件的來回航班。
 
-# =========================
-# 找價格
-# =========================
-
-prices = []
-
-matches = re.findall(
-    r"NT\$?\s?([\d,]+)",
-    text
-)
-
-for match in matches:
-
-    price = int(
-        match.replace(",", "")
-    )
-
-    # 避免抓到不合理的數字
-    if 1000 <= price <= 100000:
-        prices.append(price)
-
-prices = sorted(set(prices))
-
-print("找到的價格:")
-print(prices[:20])
-
-
-# =========================
-# Discord
-# =========================
-
-if not prices:
-
-    message = f"""
-⚠️ **機票查價結果**
-
-目前沒有成功解析到 Google Flights 的票價。
-
-✈️ {DEPARTURE} → {ARRIVAL}
-
-📅 {OUTBOUND_DATE}
-📅 回程 {RETURN_DATE}
-
+✈️ TPE → PUS
+📅 2027/02/19 → 2027/02/21
 🕒 去程 15:00–19:00
-
-💰 預算 NT${BUDGET:,}
-
-這不代表沒有機票，
-只是目前免費抓取沒有成功解析價格。
+💺 經濟艙
+👤 1 位成人
 """
 
 else:
 
-    cheapest = min(prices)
+    # 按總價由低到高
+    itineraries.sort(
+        key=lambda x: x.get("price", {}).get("amount", 999999999)
+    )
 
-    if cheapest < BUDGET:
+    cheapest = itineraries[0]
 
-        message = f"""
-🔥 **機票低於預算！**
+    price = cheapest.get("price", {})
+    amount = price.get("amount")
+    currency = price.get("currency", "TWD")
 
-✈️ {DEPARTURE} → {ARRIVAL}
+    outbound = cheapest.get("outbound", {})
+    inbound = cheapest.get("inbound", {})
 
-📅 {OUTBOUND_DATE}
-📅 回程 {RETURN_DATE}
+    outbound_segments = outbound.get("segments", [])
+    inbound_segments = inbound.get("segments", [])
 
-🕒 去程 15:00–19:00
+    outbound_first = (
+        outbound_segments[0]
+        if outbound_segments
+        else {}
+    )
 
-💰 **目前抓到最低：NT${cheapest:,}**
+    outbound_last = (
+        outbound_segments[-1]
+        if outbound_segments
+        else {}
+    )
 
-🎯 預算：NT${BUDGET:,}
+    inbound_first = (
+        inbound_segments[0]
+        if inbound_segments
+        else {}
+    )
 
-🔥 低於預算 NT${BUDGET - cheapest:,}！
+    inbound_last = (
+        inbound_segments[-1]
+        if inbound_segments
+        else {}
+    )
+
+    airline = outbound.get(
+        "carrier",
+        "未知航空公司"
+    )
+
+    departure_time = outbound_first.get(
+        "departure_time_local",
+        "未知"
+    )
+
+    arrival_time = outbound_last.get(
+        "arrival_time_local",
+        "未知"
+    )
+
+    return_departure = inbound_first.get(
+        "departure_time_local",
+        "未知"
+    )
+
+    return_arrival = inbound_last.get(
+        "arrival_time_local",
+        "未知"
+    )
+
+    message = f"""
+✈️ **機票查價成功！**
+
+🛫 桃園 TPE → 釜山 PUS
+
+📅 去程：2027/02/19
+🕒 去程：{departure_time}
+
+📅 回程：2027/02/21
+🕒 回程：{return_departure}
+
+🏷️ 航空公司：
+{airline}
+
+💰 **最低價格：{currency} {amount:,}**
+
+🛬 去程抵達：
+{arrival_time}
+
+🛬 回程抵達：
+{return_arrival}
+
+🔎 找到 {len(itineraries)} 個行程
 """
-
-    else:
-
-        message = f"""
-✈️ **機票價格監控**
-
-航線：
-{DEPARTURE} → {ARRIVAL}
-
-📅 {OUTBOUND_DATE}
-📅 回程 {RETURN_DATE}
-
-🕒 去程 15:00–19:00
-
-💰 目前最低：
-**NT${cheapest:,}**
-
-🎯 預算：
-NT${BUDGET:,}
-
-目前尚未低於預算。
-"""
-
 
 requests.post(
-    WEBHOOK,
+    DISCORD_WEBHOOK,
     json={
         "content": message
     },
